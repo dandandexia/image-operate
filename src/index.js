@@ -108,12 +108,12 @@ export default class ImageOperate {
         let { width } = image;
         let { height } = image;
         if (this.scaleQueue.length) {
-            this.scaleRatio = this.scaleQueue.reduce((result, item) => {
+            this.scaleRadio = Math.min(this.scaleQueue.reduce((result, item) => {
                 return result * Math.min(item[0] / width, item[1] / height);
-            }, 1);
+            }, 1), 1);
         }
 
-        this.draw(image, width * this.scaleRatio, height * this.scaleRatio);
+        this.draw(image, width * this.scaleRadio, height * this.scaleRadio);
 
         if (type === 1) {
             const result = this.canvas.toDataURL('image/jpeg', this.quality);
@@ -123,15 +123,44 @@ export default class ImageOperate {
             };
         }
         return new Promise((resolve, reject) => {
+            // ie兼容问题
+            if (!HTMLCanvasElement.prototype.toBlob) {
+                Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
+                    value(callback, fileType = 'image/jpeg', quality) {
+                        let canvas = this;
+                        setTimeout(() => {
+                            let binStr = atob(canvas.toDataURL(fileType, quality).split(',')[1]);
+                            let len = binStr.length;
+                            let arr = new Uint8Array(len);
+                            for (let i = 0; i < len; i++) {
+                                arr[i] = binStr.charCodeAt(i);
+                            }
+                            callback && callback(new Blob([arr]));
+                        });
+                    },
+                });
+            }
+            let { File } = window;
+            try {
+                new File([], '');
+            } catch (e) {
+                // 低版本ie 下重写 File
+                // eslint-disable-next-line no-shadow
+                File = class File extends Blob {
+                    constructor(chunks, filename, opts = {}) {
+                        super(chunks, opts);
+                        this.lastModifiedDate = new Date();
+                        this.lastModified = +this.lastModifiedDate;
+                        this.name = filename;
+                    }
+                };
+            }
             this.canvas.toBlob((blob) => {
-                blob.lastModifiedDate = new Date();
-                blob.name = this.file.name;
                 resolve({
-                    data: blob,
+                    data: new File([blob], this.file.name),
                     size: blob.size,
                 });
-            }, 'image/jpeg');
+            }, 'image/jpeg', this.quality);
         });
     }
 }
-
